@@ -1,0 +1,3 @@
+﻿Module Mprincipal
+    Public revision_automatica As Boolean
+End Module

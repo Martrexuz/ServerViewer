@@ -1,0 +1,300 @@
+﻿Imports System.IO
+Imports System.Net
+Imports System.Net.Sockets
+
+Public Class PanelPrincipal
+    Dim tabla As New DataTable
+    Dim aux As Boolean = False
+    Private Sub PanelPrincipal_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Dim sv As New Cservidor
+
+
+        sv.Listar_servidores()
+        tabla = sv.tabla
+        tabla.Columns.Add("Estado")
+        'debo armar el formato de la grilla
+        Dim ch As New DataGridViewCheckBoxColumn
+        Dim bt As New DataGridViewButtonColumn
+        Dim bt2 As New DataGridViewButtonColumn
+
+        DGprincipal.Columns.Add(ch) 'agrego la columna de checkbox
+        '
+        DGprincipal.DataSource = tabla
+        DGprincipal.Columns("Estado").DefaultCellStyle.BackColor = Color.LightGray
+        'Button7.PerformClick()
+
+    End Sub
+
+
+
+    Private Sub DGprincipal_CellContentClick(sender As Object, e As DataGridViewCellEventArgs) Handles DGprincipal.CellContentClick
+        If e.RowIndex = -1 Then
+            Return
+        End If
+        If DGprincipal.Columns(e.ColumnIndex).Name.Equals("") Then
+            Dim rw As DataGridViewRow = DGprincipal.Rows(e.RowIndex)
+            Dim cselect As DataGridViewCheckBoxCell = rw.Cells("")
+
+            If Convert.ToBoolean(cselect.Value) Then
+
+                'PINTA LA CELDA DEL CHECK
+                rw.DefaultCellStyle.BackColor = Color.Azure
+
+                'AQUI SE DEBERIA REALIZAR LAS COMPROBACIONES PARA DARLE ESTADO AL SERVIDOR
+                If comprobar_conexion(rw.Cells.Item(3).Value, 30000) Then
+                    rw.Cells.Item(6).Style.BackColor = Color.Green
+                Else
+                    rw.Cells.Item(6).Style.BackColor = Color.Red
+                End If
+
+            Else
+                rw.Cells.Item(6).Style.BackColor = Color.LightGray
+            End If
+
+        End If
+    End Sub
+
+    Private Sub DGprincipal_CurrentCellDirtyStateChanged(sender As Object, e As EventArgs) Handles DGprincipal.CurrentCellDirtyStateChanged
+        If DGprincipal.IsCurrentCellDirty Then
+            DGprincipal.CommitEdit(DataGridViewDataErrorContexts.Commit)
+        End If
+    End Sub
+
+    Private Function comprobar_conexion(direccion_ip As String, parametro As Integer)
+        Dim estado As Boolean
+        'se tienen que cargar los datos de la tabla parametros
+
+        Try
+            If My.Computer.Network.Ping(direccion_ip, parametro) Then
+                'MsgBox("Conexion existosa")
+                estado = True
+            Else
+                'MsgBox("No hay conexion")
+                estado = False
+            End If
+        Catch ex As Net.NetworkInformation.PingException
+            MessageBox.Show("este es el error:" & vbCrLf & ex.Message, "", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            estado = False
+        End Try
+        Return estado
+    End Function
+
+    Private Sub Button7_Click(sender As Object, e As EventArgs) Handles Button7.Click
+        'Comprobar ping, aplicaciones y servicios a todos los servidores de la grilla
+        'Cargo datos de la tabla parametros
+        Dim tparametro As New Cparametros
+        For Each fila As DataRow In tabla.Rows
+            tparametro.Buscar_valor_parametros("Tiempo de respuesta")
+            If comprobar_conexion(fila.Item(2), tparametro.tabla.Rows.Item(0).Item(0)) Then
+                'BUSCO EL SERVICIO DEL SERVIDOR, DEBERIA VALIDAR QUE FUESE LINUX PARA USAR SSH Y EN WINDOWS SOLO TIRAR UN PING DE MOMENTO.
+                Dim cs As New Cservicios
+                'busco el codigo del servicio enlazado al servidor
+                If cs.buscar_servicio_servidor(fila.Item(0)) Then
+
+                    'recorro la lista de la tabla join
+                    For Each r As DataRow In cs.tabla.Rows
+                        Dim csn As New Cservicios
+                        'busco la lista con los servicios
+                        If csn.buscar_servicio(r.Item(0)) Then
+                            'recorro la lista de servicios
+                            For Each rr As DataRow In csn.tabla.Rows
+                                'si en la lista existe el ssh 
+                                If rr.Item(0) = "sshd" Then
+                                    aux = True
+                                End If
+                            Next
+                            For Each rrr As DataRow In csn.tabla.Rows
+                                If aux = True Then
+                                    tabla.Rows.Item(tabla.Rows.IndexOf(fila)).Item(5) = rrr.Item(0).ToString
+                                    If consola_ssl(fila.Item(2), rrr.Item(0)) Then
+                                        DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.LightGreen
+                                        tabla.Rows.Item(tabla.Rows.IndexOf(fila)).Item(5) = "Correcto"
+                                    Else
+                                        MsgBox("No encuentra el servicio " + rrr.Item(0))
+                                        DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.Red
+                                    End If
+                                Else
+                                    MsgBox("no hay ssh")
+                                End If
+                            Next
+                        End If
+                    Next
+
+                Else
+                    DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.LightGreen
+                    MsgBox("No tiene servicios asignados.")
+                    tabla.Rows.Item(tabla.Rows.IndexOf(fila)).Item(5) = "Correcto"
+                End If
+            Else
+                DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.Red
+                fila.Item(5) = "Fallò ping"
+            End If
+            Application.DoEvents()
+        Next
+    End Sub
+
+
+    Public Function Conectarse_a_puerto(address As String, port As Integer) As Boolean
+        Dim timeout As Integer = 15000
+        Dim result = False
+        Try
+            Using socket = New Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+                Dim asyncResult As IAsyncResult = socket.BeginConnect(address, port, Nothing, Nothing)
+                result = asyncResult.AsyncWaitHandle.WaitOne(timeout, True)
+                socket.Close()
+            End Using
+            Return result
+        Catch
+            Return False
+        End Try
+    End Function
+
+
+
+    Private Function consola_ssl(ip_servidor As String, nombre_servicio As String)
+
+        'Crear los objetos necesarios para hacer la conexion'
+        Dim connInfo As New Renci.SshNet.PasswordConnectionInfo(ip_servidor, "mrojas", "m12r07,")
+        Dim sshClient As New Renci.SshNet.SshClient(connInfo)
+        Dim status As Boolean
+        'Need to hold the command'
+        Dim cmd As Renci.SshNet.SshCommand
+
+        Using sshClient
+            'connect to the server'
+            sshClient.Connect()
+
+            'se ejecuta el comando y se almacena en un objeto cmd en este caso'
+            'reviso el servicio del servidor'
+            If ip_servidor.Equals("192.168.140.1") Or ip_servidor.Equals("192.168.140.3") Or ip_servidor.Equals("190.151.32.203") Then
+                cmd = sshClient.RunCommand("sudo systemctl status " + nombre_servicio + ".service")
+                'necesito leer la 3ra linea del result
+                If cmd.Result.Contains("active (running)") Or cmd.Result.Contains("active (exited)") Then
+                    status = True
+                Else
+                    status = False
+                End If
+
+
+            ElseIf ip_servidor.Equals("190.151.32.204") Or ip_servidor.Equals("190.151.60.115") Then
+                cmd = sshClient.RunCommand("sudo /sbin/service " + nombre_servicio + " status")
+                'necesito leer la primera linea
+                If cmd.Result.Contains("Se está ejecutando") Then
+                    status = True
+                Else
+                    status = False
+                End If
+
+            Else
+                cmd = sshClient.RunCommand("ls")
+            End If
+            'muestro el resultado de la consola'
+            'consola.Text = cmd.Result
+            'Close the connection.'
+            sshClient.Disconnect()
+
+            'Application.DoEvents()
+        End Using
+
+        Return status
+    End Function
+
+    Private Sub bnt_comprobar_Click(sender As Object, e As EventArgs) Handles bnt_comprobar.Click
+        Dim tparametro As New Cparametros
+        For Each fila As DataRow In tabla.Rows
+            tparametro.Buscar_valor_parametros("Tiempo de respuesta")
+            If comprobar_conexion(fila.Item(2), tparametro.tabla.Rows.Item(0).Item(0)) Then
+
+
+
+                'busco el tipo de sistema operativo del servidor.
+                Dim sot As New Cso
+                If sot.buscar_so_tipo(fila.Item(0)) Then
+
+
+                    MsgBox("S.O=" + sot.tabla.Rows.Item(0).Item(0).ToString)
+
+
+                Else
+                    MsgBox("No tiene un sistema operativo conocido!")
+                End If
+
+
+                'BUSCO EL SERVICIO DEL SERVIDOR, DEBERIA VALIDAR QUE FUESE LINUX PARA USAR SSH Y EN WINDOWS SOLO TIRAR UN PING DE MOMENTO.
+                Dim cs As New Cservicios
+                'busco el codigo del sel servicio enlazado al servidor
+                If cs.buscar_servicio_servidor(fila.Item(0)) Then
+
+                    'recorro la lista de la tabla join
+                    For Each r As DataRow In cs.tabla.Rows
+                        Dim csn As New Cservicios
+                        'busco la lista con los servicios
+                        If csn.buscar_servicio(r.Item(0)) Then
+
+                            'recorro la lista de servicios
+                            For Each rr As DataRow In csn.tabla.Rows
+                                'si en la lista existe el ssh 
+                                If rr.Item(0) = "sshd" Then
+                                    aux = True
+                                End If
+                            Next
+                            For Each rrr As DataRow In csn.tabla.Rows
+                                If aux = True Then
+                                    If consola_ssl(fila.Item(2), rrr.Item(0)) Then
+                                        DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.LightGreen
+                                        tabla.Rows.Item(tabla.Rows.IndexOf(fila)).Item(5) = "Correcto"
+                                    Else
+                                        MsgBox("No encuentra el servicio")
+                                        DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.Red
+                                    End If
+                                Else
+                                    MsgBox("no hay ssh")
+                                End If
+                            Next
+                        End If
+                    Next
+
+                Else
+
+                    DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.LightGreen
+                    tabla.Rows.Item(tabla.Rows.IndexOf(fila)).Item(5) = "Correcto"
+                    'MsgBox("No tiene servicios asignados.")
+                End If
+            Else
+                DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.Red
+                fila.Item(5) = "Fallò ping"
+            End If
+            Application.DoEvents()
+        Next
+
+
+
+
+
+
+    End Sub
+End Class
+
+
+'consultar por aplicacion y servicios del servidor 
+
+'consultare una aplicacion con puerto.
+'Dim apls As New Caplicacion
+
+'apls.Buscar_aplicacion_servidor(Val(fila.Item(0)))
+'For Each fa As DataRow In apls.tabla.Rows
+'    Dim apl As New Caplicacion
+'    apl.Buscar_aplicacion(fa.Item(0))
+'    For Each ap As DataRow In apl.tabla.Rows
+
+'        If Conectarse_a_puerto(fila.Item(2), ap.Item(2)) Then
+'            DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.LightGreen
+'            fila.Item(5) = "Correcto puerto" + ap.Item(2).ToString
+'        Else
+'            DGprincipal.Rows.Item(tabla.Rows.IndexOf(fila)).Cells.Item(6).Style.BackColor = Color.Red
+'            fila.Item(5) = "Fallò puerto" + ap.Item(2).ToString
+'        End If
+'        Application.DoEvents()
+'    Next
+'    Application.DoEvents()
+'Next

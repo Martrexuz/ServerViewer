@@ -1,0 +1,54 @@
+﻿Public Class PanelPrincipal
+    Dim tabla As New DataTable
+    Private Sub PanelPrincipal_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Dim sv As New Cservidor
+
+
+        sv.Listar_servidores()
+        tabla = sv.tabla
+        tabla.Columns.Add("Estado")
+        'debo armar el formato de la grilla
+        Dim ch As New DataGridViewCheckBoxColumn
+        Dim bt As New DataGridViewButtonColumn
+        Dim bt2 As New DataGridViewButtonColumn
+
+
+        'parametros de las columnas por defecto
+        'bt.Name = "detalle"
+        'bt2.Name = "Historial"
+        'bt.DefaultCellStyle.ForeColor = Color.Red
+        'bt.FlatStyle = FlatStyle.Popup
+        'bt.Resizable = DataGridViewTriState.True
+        DGprincipal.Columns.Add(ch) 'agrego la columna de checkbox
+        '
+        DGprincipal.DataSource = tabla
+        'DGprincipal.Columns.Add(bt)
+        'DGprincipal.Columns.Add(bt2)
+        DGprincipal.Columns("Estado").DefaultCellStyle.BackColor = Color.LightGray
+    End Sub
+
+
+
+    Private Sub DGprincipal_CellContentClick(sender As Object, e As DataGridViewCellEventArgs) Handles DGprincipal.CellContentClick
+        If e.RowIndex = -1 Then
+            Return
+        End If
+        If DGprincipal.Columns(e.ColumnIndex).Name.Equals("") Then
+            Dim rw As DataGridViewRow = DGprincipal.Rows(e.RowIndex)
+            Dim cselect As DataGridViewCheckBoxCell = rw.Cells("")
+
+            If Convert.ToBoolean(cselect.Value) Then
+                rw.DefaultCellStyle.BackColor = Color.Azure
+            Else
+                rw.DefaultCellStyle.BackColor = Color.Green
+            End If
+
+        End If
+    End Sub
+
+    Private Sub DGprincipal_CurrentCellDirtyStateChanged(sender As Object, e As EventArgs) Handles DGprincipal.CurrentCellDirtyStateChanged
+        If DGprincipal.IsCurrentCellDirty Then
+            DGprincipal.CommitEdit(DataGridViewDataErrorContexts.Commit)
+        End If
+    End Sub
+End Class
